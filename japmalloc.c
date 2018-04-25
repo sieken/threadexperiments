@@ -59,6 +59,10 @@ static void initialize_mempool(void)
 	}
 }
 
+/* jfree() and coalesce() written by Eliaz Sundberg 2018 */
+void jfree(void*);
+void coalesce(struct chunk*);
+
 void* jmalloc(size_t size)
 {
 	/* TODO lock */
@@ -106,4 +110,75 @@ static struct chunk* split_chunk(size_t size, struct chunk *node)
 	node->size = size;
 
 	return newBlock;
+}
+
+/*
+ * jfree keeps the free list ordered from low addresses to high
+ * TODO possibly implement binary search on list?
+ * TODO locks and cond vars
+ */
+void jfree (void *addr) {
+    struct chunk *ptr = (struct chunk*)((struct chunk*)addr - 1);
+
+    /* if the memory to be freed is in low memory (before head), add to beginning of list and update head */
+    if (ptr < pool->head) {
+        ptr->next = pool->head;
+        ptr->prev = NULL;
+        pool->head->prev = ptr;
+        pool->head = ptr;
+        coalesce(pool->head);
+        return;
+    }
+
+    /* traverse the list to find appropriate location for new chunk */
+    struct chunk *current = head->next;
+
+    while (ptr < current) {
+        /* if end of list, add */
+        if (current->next == NULL) {
+            current->next = ptr;
+            ptr->prev = current;
+            ptr->next = NULL;
+            coalesce(ptr->prev);
+            return;
+        }
+        current = current->next;
+    }
+    /* if ptr > current, squeeze in between current->prev and current */
+    current->prev->next = ptr;
+    ptr->prev = current->prev;
+    current->prev = ptr;
+    ptr->next = current;
+    coalesce(ptr);
+    return;
+}
+
+/* coalesces two adjecent chunks */
+void coalesce(struct chunk* ptr) {
+    void *prevaddr;
+    prevaddr = (void*)((struct chunk*)ptr->prev + 1);
+
+    /* if we're at the list head, skip */
+    if (ptr->prev != NULL) {
+        /* if the address to the end of the previous list entry (plus 1) is the same as
+         * the current address, coalesce them
+         */
+        if (prevaddr + ptr->prev->size == ptr) {
+            ptr->prev->next = ptr->next;
+            ptr->next->prev = ptr->prev;
+            ptr->prev->size += ptr->size + HEADER_SIZE;
+        }
+    }
+
+    /* if we're at list tail, skip */
+    if (ptr->next != NULL) {
+        /* if the address of the current list entry plus its size (plus one HEADER_SIZE) is
+         * the same as the next list entries address, coalesce them
+         */
+        if (ptr + ptr->size + HEADER_SIZE == ptr->next) {
+            ptr->next = ptr->next->next;
+            ptr->next->prev = ptr;
+            ptr->size += ptr->next->size + HEADER_SIZE;
+        }
+    }
 }
