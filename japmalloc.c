@@ -8,6 +8,7 @@
 /* TODO recalculate HEADER_SIZE */
 #define HEADER_SIZE 16
 #define INITIAL_MEM_REQUEST 4096
+#define MINIMUM_FREE_SIZE 1
 
 struct chunk {
     size_t size;
@@ -63,12 +64,14 @@ void* jmalloc(size_t size)
 		}
 	}
 
-	/* TODO check if split_chunk is NULL */
-	struct chunk *remainder = split_chunk(totsize, entry);
-	remainder->prev = entry->prev;
-	remainder->next = entry->next;
-	if (entry == pool->head)
-		pool->head = remainder;
+	/* Place remainder in free list if split is successful */
+	struct chunk *remainder;
+	if ((remainder = split_chunk(totsize, entry)) != NULL) {
+		remainder->prev = entry->prev;
+		remainder->next = entry->next;
+		if (entry == pool->head)
+			pool->head = remainder;
+	}
 
 	/* TODO unlock*/
 
@@ -81,11 +84,14 @@ void* jmalloc(size_t size)
 static struct chunk* split_chunk(size_t size, struct chunk *node)
 {
 	struct chunk *newBlock = NULL;
-	void *oldSpace = (void*) ((struct chunk *) node + 1);
 
-	/* TODO don't split if remaining block is too small */
-	newBlock = (struct chunk*) ((void*) oldSpace + size);
-	newBlock->size = node->size - size - HEADER_SIZE;
+	/* Return if remainder size is too small */
+	size_t remainderSize = node->size - size - HEADER_SIZE;
+	if (remainderSize < MINIMUM_FREE_SIZE)
+		return newBlock;
+
+	newBlock = (struct chunk*) ((void*) node + HEADER_SIZE + size);
+	newBlock->size = remainderSize;
 	node->size = size;
 
 	return newBlock;
