@@ -24,30 +24,43 @@ struct mempool {
 
 struct mempool *pool = NULL;
 
-/* init_mempool, jmalloc & split_chunk written by David Henriksson 2018 */
-void initialize_mempool(void);
+/* init_mempool, jmalloc, split_chunk, request_memory written by David Henriksson 2018 */
+static void initialize_mempool(void);
 void* jmalloc(size_t);
 static struct chunk* split_chunk(size_t size, struct chunk *);
+static struct chunk* request_memory(size_t);
 
-void initialize_mempool(void)
+static struct chunk* request_memory(size_t size)
+{
+	struct chunk *newChunk;
+	if ((newChunk = sbrk(size + HEADER_SIZE)) < 0) {
+		fprintf(stderr, "jmalloc: memory request failed\n");
+		return NULL;
+	} else {
+		newChunk->size = size;
+		newChunk->prev = NULL;
+		newChunk->next = NULL;
+	}
+
+	return newChunk;
+}
+
+static void initialize_mempool(void)
 {
 	void *bottom;
-	bottom = sbrk(0);
-	if (sbrk(INITIAL_MEM_REQUEST) < 0) {
+	if ((bottom = sbrk(INITIAL_MEM_REQUEST + HEADER_SIZE + sizeof(struct mempool))) < 0) {
 		fprintf(stderr, "jmalloc: failed to initialize memory pool (out of memory?)\n");
 		exit(1);
 	} else {
 		pool = bottom;
 		pool->head = (struct chunk*) ((struct mempool*) pool + 1);
-		pool->head->size = INITIAL_MEM_REQUEST - sizeof(struct chunk);
+		pool->head->size = INITIAL_MEM_REQUEST;
 		/* TODO initialize lock? */
 	}
 }
 
 void* jmalloc(size_t size)
 {
-	size_t totsize = size + HEADER_SIZE;
-
 	/* TODO lock */
 
 	if (pool == NULL) {
@@ -56,17 +69,15 @@ void* jmalloc(size_t size)
 
 	struct chunk *entry = pool->head;
 	/* Step through free-list to find a fitting memory block */
-	while (entry->size < totsize) {
+	while (entry->size < size) {
+		if (entry->next == NULL)
+			entry->next = request_memory(size);
 		entry = entry->next;
-		if (entry == NULL) {
-			printf("jmalloc: out of memory in free-list (FIX)\n");
-			return NULL;
-		}
 	}
 
 	/* Place remainder in free list if split is successful */
 	struct chunk *remainder;
-	if ((remainder = split_chunk(totsize, entry)) != NULL) {
+	if ((remainder = split_chunk(size, entry)) != NULL) {
 		remainder->prev = entry->prev;
 		remainder->next = entry->next;
 		if (entry == pool->head)
