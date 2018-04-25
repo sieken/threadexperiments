@@ -30,6 +30,11 @@ void* jmalloc(size_t);
 static struct chunk* split_chunk(size_t size, struct chunk *);
 static struct chunk* request_memory(size_t);
 
+/* jfree() and coalesce() written by Eliaz Sundberg 2018 */
+void jfree(void*);
+void coalesce(struct chunk*);
+
+
 static struct chunk* request_memory(size_t size)
 {
 	struct chunk *newChunk;
@@ -58,10 +63,6 @@ static void initialize_mempool(void)
 		/* TODO initialize lock? */
 	}
 }
-
-/* jfree() and coalesce() written by Eliaz Sundberg 2018 */
-void jfree(void*);
-void coalesce(struct chunk*);
 
 void* jmalloc(size_t size)
 {
@@ -131,7 +132,7 @@ void jfree (void *addr) {
     }
 
     /* traverse the list to find appropriate location for new chunk */
-    struct chunk *current = head->next;
+    struct chunk *current = pool->head->next;
 
     while (ptr < current) {
         /* if end of list, add */
