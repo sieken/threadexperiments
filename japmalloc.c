@@ -5,7 +5,6 @@
 #include <pthread.h>
 #include <stdio.h>
 
-<<<<<<< Updated upstream
 /* TODO recalculate HEADER_SIZE */
 #define HEADER_SIZE 16
 #define INITIAL_MEM_REQUEST 4096
@@ -15,28 +14,15 @@ struct chunk {
     size_t size;
     struct chunk *prev;
     struct chunk *next;
-=======
-#define HEADER_SIZE = sizeof(struct chunk);
-
-struct chunk {
-    size_t size;
-    struct chunk *next;
-    struct chunk *prev;
->>>>>>> Stashed changes
 };
 
 struct mempool {
     struct chunk *head;
-<<<<<<< Updated upstream
     pthread_mutex_t lock;
     pthread_cond_t avail;
 };
 
 struct mempool *pool = NULL;
-=======
-    /* TODO lock and cond var */
-} pool;
->>>>>>> Stashed changes
 
 /* init_mempool, jmalloc & split_chunk written by David Henriksson 2018 */
 void initialize_mempool(void);
@@ -68,16 +54,9 @@ void* jmalloc(size_t size)
 
 	/* TODO lock */
 
-<<<<<<< Updated upstream
 	if (pool == NULL) {
 		initialize_mempool();
 	}
-=======
-	/* TODO Lock */
-
-	if (size < 1)
-		return ptr;
->>>>>>> Stashed changes
 
 	struct chunk *entry = pool->head;
 	/* Step through free-list to find a fitting memory block */
