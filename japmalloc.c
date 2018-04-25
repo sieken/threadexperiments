@@ -3,96 +3,90 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdio.h>
 
+/* TODO recalculate HEADER_SIZE */
 #define HEADER_SIZE 16
+#define INITIAL_MEM_REQUEST 4096
 
-struct memnode {
-    size_t maxsize;
-    struct memnode *left;
-    struct memnode *right;
+struct chunk {
+    size_t size;
+    struct chunk *prev;
+    struct chunk *next;
 };
 
 struct mempool {
-    struct memnode *root;
+    struct chunk *head;
     pthread_mutex_t lock;
     pthread_cond_t avail;
-} pool;
+};
 
-/* jmalloc & traverse_tree written by David Henriksson 2018 */
+struct mempool *pool = NULL;
+
+/* init_mempool, jmalloc & split_chunk written by David Henriksson 2018 */
+void initialize_mempool(void);
 void* jmalloc(size_t);
-static void* traverse_tree(size_t, struct memnode *);
-static struct memnode* split_block(size_t size, struct memnode *memblock);
+static struct chunk* split_chunk(size_t size, struct chunk *);
+
+void initialize_mempool(void)
+{
+	void *bottom;
+	bottom = sbrk(0);
+	if (sbrk(INITIAL_MEM_REQUEST) < 0) {
+		fprintf(stderr, "jmalloc: failed to initialize memory pool (out of memory?)\n");
+		exit(1);
+	} else {
+		pool = bottom;
+		pool->head = (struct chunk*) ((struct mempool*) pool + 1);
+		pool->head->size = INITIAL_MEM_REQUEST - sizeof(struct chunk);
+		/* TODO initialize lock? */
+	}
+}
 
 void* jmalloc(size_t size)
 {
-	void *ptr = NULL;
+	size_t totsize = size + HEADER_SIZE;
 
-	/* TODO Lock */
-	
-	if (size < 1)
-		return ptr;
+	/* TODO lock */
 
-	if (pool.root->maxsize == 0) {
-		ptr = sbrk(0);
-		if (sbrk(1024) < 0)
+	if (pool == NULL) {
+		initialize_mempool();
+	}
+
+	struct chunk *entry = pool->head;
+	/* Step through free-list to find a fitting memory block */
+	while (entry->size < totsize) {
+		entry = entry->next;
+		if (entry == NULL) {
+			printf("jmalloc: out of memory in free-list (FIX)\n");
 			return NULL;
-		else {
-			pool.root = ptr;
-			pool.root->maxsize = 1024 - HEADER_SIZE;
-			pool.root->left = NULL;
-			pool.root->right = NULL;
 		}
 	}
 
-	if (pool.root->maxsize < size)
-		/* TODO */
-		return ptr;
-	else
-		traverse_tree(size, pool.root);
+	/* TODO check if split_chunk is NULL */
+	struct chunk *remainder = split_chunk(totsize, entry);
+	remainder->prev = entry->prev;
+	remainder->next = entry->next;
+	if (entry == pool->head)
+		pool->head = remainder;
 
-	/* TODO Unlock */
+	/* TODO unlock*/
 
-	/* TODO Fix address of actual memory block */
-	return ptr;
-}
-
-/* Recursively traverse tree structure that holds memory blocks, and return appropriate sized block */
-static void* traverse_tree(size_t size, struct memnode *node)
-{
-	/* If node has no subtrees we have reached a memory block */
-	if (node->left == NULL && node->right == NULL) {
-		/* Make sure we get an appropriate power of 2 size memory block */
-		node = split_block(size, node);
-		return node;
-	}
-
-	if (node->left->maxsize >= size)
-		return traverse_tree(size, node->left);
-	else
-		return traverse_tree(size, node->right);
+	return (void*) ((struct chunk *) entry + 1);
 
 }
 
-/* Recursively split current block in powers of two until good fit for request, and manage tree structure */
-static struct memnode* split_block(size_t size, struct memnode *node)
+/* Split the block to fit size, and return pointer to block containing the remaining memory after splitting,
+ * and return NULL if remaining space is too small to perform a split */
+static struct chunk* split_chunk(size_t size, struct chunk *node)
 {
-	/* If half of size of memnode is big enough, we need to split*/
-	if ((node->maxsize / 2) >= size + HEADER_SIZE) {
-		/* TODO Split and make subtrees */
-		int leftsize, rightsize;
-		struct memnode *leftnode, *rightnode;
-		rightsize = ((HEADER_SIZE + node->maxsize) / 2) - HEADER_SIZE;
-		leftsize = rightsize - HEADER_SIZE;
-		leftnode = (struct memnode*) ((struct memnode*) node + 1);
-		rightnode = (struct memnode*) ((void*) leftnode + rightsize);
-		leftnode->maxsize = leftsize;
-		rightnode->maxsize = rightsize;
-		node->left = leftnode;
-		node->left->left = node->left->right = NULL;
-		node->right = rightnode;
-		node->right->left = node->right->right = NULL;
-		return split_block(size, node->left);
-	} else {
-		return node;
-	}
+	struct chunk *newBlock = NULL;
+	void *oldSpace = (void*) ((struct chunk *) node + 1);
+
+	/* TODO don't split if remaining block is too small */
+	newBlock = (struct chunk*) ((void*) oldSpace + size);
+	newBlock->size = node->size - size - HEADER_SIZE;
+	node->size = size;
+
+	return newBlock;
 }
