@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <string.h>
-#include "threadtest.c"
+#include "threads.c"
 
 /* Test types for bench;
  * ALL - Run all types
