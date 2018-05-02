@@ -18,10 +18,7 @@ struct chunk {
 
 struct mempool {
 	struct chunk *head;
-	/* TODO consider removing memtot, possible better solution */
-	size_t memtot;
 	pthread_mutex_t lock;
-	pthread_cond_t avail;
 };
 
 struct mempool *pool = NULL;
@@ -31,20 +28,20 @@ pthread_mutex_t sbrkLock;
 static void initialize_mempool(struct mempool **);
 void* jmalloc(size_t);
 static struct chunk* request_memory(size_t);
-void* jmalloc_tls(size_t size, struct mempool　*);
-static void* allocate_from_list(size_t size, struct mempool　*);
+void* jmalloc_tls(size_t size, struct mempool *);
+static void* allocate_from_list(size_t size, struct mempool *);
 
 /* jfree() and coalesce() written by Eliaz Sudberg 2018 */
 void jfree(void *);
-void jfree_tls (void *, struct mempool　*);
+void jfree_tls (void *, struct mempool *);
 static void free_to_list(void *, struct mempool *);
-static void coalesce(struct chunk　*);
+static void coalesce(struct chunk *);
 
 
 /* Print functions for debugging/troubleshooting */
 /* TODO delete before delivery */
 void print_list(void);
-void print_list_from(struct chunk　*);
+void print_list_from(struct chunk *);
 
 static struct chunk* request_memory(size_t size)
 {
@@ -58,8 +55,6 @@ static struct chunk* request_memory(size_t size)
 		newChunk->prev = NULL;
 		newChunk->next = NULL;
 	}
-
-	pool->memtot += sbrk(0) - (void*)newChunk;
 
 	pthread_mutex_unlock(&sbrkLock);
 
@@ -76,17 +71,11 @@ void initialize_mempool(struct mempool **mempool)
 		*mempool = bottom;
 		(*mempool)->head = (struct chunk*) ((struct mempool*) pool + 1);
 		(*mempool)->head->size = INITIAL_MEM_REQUEST;
-		(*mempool)->memtot = sbrk(0) - bottom;
 		pthread_mutex_init(&(*mempool)->lock, NULL);
-		pthread_cond_init(&(*mempool)->avail, NULL);
 		pthread_mutex_init(&sbrkLock, NULL);
-		// (*mempool)->lock = PTHREAD_MUTEX_INITIALIZER;
-		// (*mempool)->avail = PTHREAD_COND_INITIALIZER;
-		/* TODO initialize lock? */
 	}
 }
 
-/*  */
 void* jmalloc(size_t size)
 {
 	/* First jmalloc() call initializes the memory pool */
@@ -95,14 +84,8 @@ void* jmalloc(size_t size)
 	}
 
 	pthread_mutex_lock(&pool->lock);
-	// while (pthread_mutex_lock(&pool->lock) != 0) {
-	// 	pthread_cond_wait(&pool->avail, &pool->lock);
-	// }
-
 	void *allocated = allocate_from_list(size, pool);
-
 	pthread_mutex_unlock(&pool->lock);
-	// pthread_cond_signal(&pool->avail);
 
 	return allocated;
 }
@@ -163,22 +146,14 @@ static void* allocate_from_list(size_t size, struct mempool *mempool)
 
 /*
 * jfree keeps the free list ordered from low addresses to high
-* TODO possibly implement binary search on list?
-* TODO locks and cond vars
 */
 
 /* Wrapper functions depending on TLS or not */
 void jfree (void *addr)
 {
 	pthread_mutex_lock(&pool->lock);
-	// while (pthread_mutex_lock(&pool->lock) != 0) {
-	// 	pthread_cond_wait(&pool->avail, &pool->lock);
-	// }
-
 	free_to_list(addr, pool);
-
 	pthread_mutex_unlock(&pool->lock);
-	// pthread_cond_signal(&pool->avail);
 }
 
 void jfree_tls (void *addr, struct mempool *mempool)
