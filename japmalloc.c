@@ -25,25 +25,31 @@ struct mempool {
 };
 
 struct mempool *pool = NULL;
+pthread_mutex_t sbrkLock;
 
-/* init_mempool, jmalloc, split_chunk, request_memory written by David Henriksson 2018 */
-static void initialize_mempool(void);
+/* init_mempool, jmalloc, request_memory written by David Henriksson 2018 */
+static void initialize_mempool(struct mempool **);
 void* jmalloc(size_t);
-static struct chunk* split_chunk(size_t size, struct chunk *);
 static struct chunk* request_memory(size_t);
+void* jmalloc_tls(size_t size, struct mempool　*);
+static void* allocate_from_list(size_t size, struct mempool　*);
 
-/* jfree() and coalesce() written by Eliaz Sundberg 2018 */
-void jfree(void*);
-static void coalesce(struct chunk*);
+/* jfree() and coalesce() written by Eliaz Sudberg 2018 */
+void jfree(void *);
+void jfree_tls (void *, struct mempool　*);
+static void free_to_list(void *, struct mempool *);
+static void coalesce(struct chunk　*);
+
 
 /* Print functions for debugging/troubleshooting */
 /* TODO delete before delivery */
 void print_list(void);
-void print_list_from(struct chunk*);
+void print_list_from(struct chunk　*);
 
 static struct chunk* request_memory(size_t size)
 {
 	struct chunk *newChunk;
+	pthread_mutex_lock(&sbrkLock);
 	if ((newChunk = sbrk(size + HEADER_SIZE)) < 0) {
 		fprintf(stderr, "jmalloc: memory request failed\n");
 		return NULL;
@@ -55,50 +61,73 @@ static struct chunk* request_memory(size_t size)
 
 	pool->memtot += sbrk(0) - (void*)newChunk;
 
+	pthread_mutex_unlock(&sbrkLock);
+
 	return newChunk;
 }
 
-static void initialize_mempool(void)
+void initialize_mempool(struct mempool **mempool)
 {
 	void *bottom;
 	if ((bottom = sbrk(INITIAL_MEM_REQUEST + HEADER_SIZE + sizeof(struct mempool))) < 0) {
 		fprintf(stderr, "jmalloc: failed to initialize memory pool (out of memory?)\n");
 		exit(1);
 	} else {
-		pool = bottom;
-		pool->head = (struct chunk*) ((struct mempool*) pool + 1);
-		pool->head->size = INITIAL_MEM_REQUEST;
-		pool->memtot = sbrk(0) - bottom;
+		*mempool = bottom;
+		(*mempool)->head = (struct chunk*) ((struct mempool*) pool + 1);
+		(*mempool)->head->size = INITIAL_MEM_REQUEST;
+		(*mempool)->memtot = sbrk(0) - bottom;
+		pthread_mutex_init(&(*mempool)->lock, NULL);
+		pthread_cond_init(&(*mempool)->avail, NULL);
+		pthread_mutex_init(&sbrkLock, NULL);
+		// (*mempool)->lock = PTHREAD_MUTEX_INITIALIZER;
+		// (*mempool)->avail = PTHREAD_COND_INITIALIZER;
 		/* TODO initialize lock? */
 	}
 }
 
+/*  */
 void* jmalloc(size_t size)
 {
-	/* TODO lock */
-
-	if (size < 0) {
-		fprintf(stderr, "Requested negative size\n");
-		return NULL;
+	/* First jmalloc() call initializes the memory pool */
+	if (pool == NULL) {
+		initialize_mempool(&pool);
 	}
 
-	/* First jmalloc() call initializes the memory pool */
-	if (pool == NULL)
-	initialize_mempool();
+	pthread_mutex_lock(&pool->lock);
+	// while (pthread_mutex_lock(&pool->lock) != 0) {
+	// 	pthread_cond_wait(&pool->avail, &pool->lock);
+	// }
 
+	void *allocated = allocate_from_list(size, pool);
+
+	pthread_mutex_unlock(&pool->lock);
+	// pthread_cond_signal(&pool->avail);
+
+	return allocated;
+}
+
+/*	Wrapper function for jmalloc with thread local storage. Function assumes
+	that each thread provides its own memory pool struct, and as such should be thread-
+	safe without locks. */
+void* jmalloc_tls(size_t size, struct mempool *mempool)
+{
+	return allocate_from_list(size, mempool);
+}
+
+static void* allocate_from_list(size_t size, struct mempool *mempool)
+{
 	/* If list is empty, allocate a big slab of new memory */
-	if (pool->head == NULL)
-	pool->head = request_memory(INITIAL_MEM_REQUEST);
-
+	if (mempool->head == NULL)
+		mempool->head = request_memory(INITIAL_MEM_REQUEST);
 	/* Walk through list to find entry with size >= requested size */
-	struct chunk *entry = pool->head;
+	struct chunk *entry = mempool->head;
 	while (entry->size < size) {
 		/* If end of list, request a new block of memory to fit requested size */
 		if (entry->next == NULL) {
 			entry->next = request_memory(size);
 			entry->next->prev = entry;
 		}
-
 		entry = entry->next;
 	}
 
@@ -121,8 +150,8 @@ void* jmalloc(size_t size)
 			entry->prev->next = entry->next;
 		if (entry->next != NULL)
 			entry->next->prev = entry->prev;
-		if (pool->head == entry)
-			pool->head = entry->next;
+		if (mempool->head == entry)
+			mempool->head = entry->next;
 	}
 
 	/* TODO unlock*/
@@ -137,29 +166,49 @@ void* jmalloc(size_t size)
 * TODO possibly implement binary search on list?
 * TODO locks and cond vars
 */
+
+/* Wrapper functions depending on TLS or not */
 void jfree (void *addr)
+{
+	pthread_mutex_lock(&pool->lock);
+	// while (pthread_mutex_lock(&pool->lock) != 0) {
+	// 	pthread_cond_wait(&pool->avail, &pool->lock);
+	// }
+
+	free_to_list(addr, pool);
+
+	pthread_mutex_unlock(&pool->lock);
+	// pthread_cond_signal(&pool->avail);
+}
+
+void jfree_tls (void *addr, struct mempool *mempool)
+{
+	free_to_list(addr, mempool);
+}
+
+static void free_to_list(void *addr, struct mempool *mempool)
 {
 	struct chunk *ptr = (struct chunk*)((void*)(addr - HEADER_SIZE));
 
-	if (pool->head == NULL) {
+	if (mempool->head == NULL) {
 		/* Empty list, ptr is put on head of list */
 		ptr->next = NULL;
 		ptr->prev = NULL;
-		pool->head = ptr;
-	} else if (ptr < pool->head) {
+		mempool->head = ptr;
+	} else if (ptr < mempool->head) {
 		/* ptr has lower address than current head, ptr is new head */
-		ptr->next = pool->head;
+		ptr->next = mempool->head;
 		ptr->prev = NULL;
-		pool->head->prev = ptr;
-		pool->head = ptr;
-	} else if (pool->head->next == NULL) {
+		mempool->head->prev = ptr;
+		mempool->head = ptr;
+	} else if (mempool->head->next == NULL) {
 		/* If list only contains one entry, ptr is put after it */
 		ptr->next = NULL;
-		ptr->prev = pool->head;
-		pool->head->next = ptr;
+		ptr->prev = mempool->head;
+		mempool->head->next = ptr;
 	} else {
 		/* Traverse list to find where the new entry should go */
-		struct chunk *current = pool->head->next;
+		struct chunk *current = mempool->head->next;
 		while (ptr > current) {
 			/* If end of list is reached put the returned block on at the end */
 			if (current->next == NULL) {
