@@ -36,12 +36,6 @@ static void* allocate_from_list(size_t, struct mempool *);
 static void free_to_list(void *, struct mempool *);
 static void coalesce(struct chunk *);
 
-
-/* Print functions for debugging/troubleshooting */
-/* TODO delete before delivery */
-void print_list(void);
-void print_list_from(struct chunk *);
-
 static struct chunk* request_memory(size_t size)
 {
 	struct chunk *newChunk;
@@ -245,77 +239,4 @@ static void coalesce(struct chunk* ptr) {
 			ptr->next->prev = ptr;
 		}
 	}
-}
-
-/* Print functions for debugging purposes */
-
-/* Prints entire list */
-void print_list(void)
-{
-	struct chunk *entry = pool->head;
-	struct chunk *prev = NULL;
-
-	size_t totalSize = 0, maxSize = 0, minSize;
-	unsigned long counter = 0;
-	int unordered = 0;
-
-	if (entry != NULL) {
-		minSize = entry->size;
-	}
-	while (entry != NULL) {
-		totalSize += entry->size;
-
-		if (entry->size > maxSize)
-		maxSize = entry->size;
-
-		if (entry->size < minSize)
-		minSize = entry->size;
-
-		if (entry < prev) {
-			printf("entry < prev\n");
-			unordered = 1;
-		}
-		counter++;
-		prev = entry;
-		entry = entry->next;
-	}
-	printf("Free list properties: \n");
-	printf("	Total size: %ld\n", totalSize);
-	printf("	Largest block: %ld\n", maxSize);
-	printf("	Smallest block: %ld\n", minSize);
-	printf("	Number of blocks: %ld\n", counter);
-	if (unordered)
-		printf("List is unordered!\n");
-}
-
-/* Prints 10 elements, from cnk - 1, in free list */
-void print_list_from(struct chunk *cnk)
-{
-	int counter = 0;
-	int prev = 0;
-
-	struct chunk *entry;
-
-	if (cnk->prev != NULL) {
-		entry = cnk->prev;
-		prev = 1;
-	} else
-		entry = cnk;
-
-	if (prev)
-		printf("prev\n |\n");
-	else
-		printf("cnk\n |\n");
-
-	while (entry != NULL) {
-		if (counter > 9) {
-			printf("\n");
-			break;
-		}
-		printf(" %ld ->", entry->size);
-		entry = entry->next;
-		counter++;
-	}
-	if (entry == NULL)
-	printf(" %p\n", entry);
 }
