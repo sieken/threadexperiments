@@ -8,7 +8,7 @@
 #define HEADER_SIZE sizeof(struct chunk)
 #define INITIAL_MEM_REQUEST 4096
 
-/* TODO Clean up code before delivery */
+enum mempool_init { MEMPOOL_NOT_INITIALIZED, MEMPOOL_INITIALIZED };
 
 struct chunk {
 	size_t size;
@@ -18,6 +18,7 @@ struct chunk {
 
 struct mempool {
 	struct chunk *head;
+	enum mempool_init initialized;
 	pthread_mutex_t lock;
 };
 
@@ -77,6 +78,8 @@ void initialize_mempool(struct mempool *mempool)
 	pthread_mutex_unlock(&sbrkLock);
 }
 
+/* Memory allocation, takes a size in bytes of memory to allocate returns a
+ * pointer to start of usable memory space */
 void* jmalloc(size_t size)
 {
 	/* First jmalloc() call initializes the memory pool */
