@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
 
 	if (type == SINGLE || type == ALL) {
 		timeTotal = single(numAllocs);
-		printf("Multi: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, 1);
+		printf("Single: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, 1);
 	}
 	if (type == MULTI || type == ALL) {
 		timeTotal = multi(numThreads, numAllocs);
