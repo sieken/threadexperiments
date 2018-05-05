@@ -21,19 +21,17 @@ struct mempool {
 	pthread_mutex_t lock;
 };
 
-struct mempool *pool = NULL;
-pthread_mutex_t sbrkLock;
+static struct mempool pool = { NULL, 0, PTHREAD_MUTEX_INITIALIZER };
+static __thread struct mempool tlsPool = { NULL, 0, PTHREAD_MUTEX_INITIALIZER };
+static pthread_mutex_t poolLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t sbrkLock = PTHREAD_MUTEX_INITIALIZER;
 
-/* init_mempool, jmalloc, request_memory written by David Henriksson 2018 */
-static void initialize_mempool(struct mempool **);
 void* jmalloc(size_t);
-static struct chunk* request_memory(size_t);
-void* jmalloc_tls(size_t size, struct mempool *);
-static void* allocate_from_list(size_t size, struct mempool *);
-
-/* jfree() and coalesce() written by Eliaz Sudberg 2018 */
+void* jmalloc_tls(size_t);
 void jfree(void *);
-void jfree_tls (void *, struct mempool *);
+void jfree_tls (void *);
+static struct chunk* request_memory(size_t);
+static void* allocate_from_list(size_t, struct mempool *);
 static void free_to_list(void *, struct mempool *);
 static void coalesce(struct chunk *);
 
@@ -61,41 +59,63 @@ static struct chunk* request_memory(size_t size)
 	return newChunk;
 }
 
-void initialize_mempool(struct mempool **mempool)
+void initialize_mempool(struct mempool *mempool)
 {
+	pthread_mutex_lock(&sbrkLock);
+
 	void *bottom;
-	if ((bottom = sbrk(INITIAL_MEM_REQUEST + HEADER_SIZE + sizeof(struct mempool))) < 0) {
+	if ((bottom = sbrk(INITIAL_MEM_REQUEST + HEADER_SIZE)) < 0) {
 		fprintf(stderr, "jmalloc: failed to initialize memory pool (out of memory?)\n");
 		exit(1);
 	} else {
-		*mempool = bottom;
-		(*mempool)->head = (struct chunk*) ((struct mempool*) pool + 1);
-		(*mempool)->head->size = INITIAL_MEM_REQUEST;
-		pthread_mutex_init(&(*mempool)->lock, NULL);
-		pthread_mutex_init(&sbrkLock, NULL);
+		mempool->head = (struct chunk*) bottom;
+		mempool->head->size = INITIAL_MEM_REQUEST;
+		pthread_mutex_init(&mempool->lock, NULL);
+		mempool->initialized = MEMPOOL_INITIALIZED;
 	}
+
+	pthread_mutex_unlock(&sbrkLock);
 }
 
 void* jmalloc(size_t size)
 {
 	/* First jmalloc() call initializes the memory pool */
-	if (pool == NULL) {
+	pthread_mutex_lock(&poolLock);
+	if (pool.initialized == MEMPOOL_NOT_INITIALIZED) {
 		initialize_mempool(&pool);
 	}
+	pthread_mutex_unlock(&poolLock);
 
-	pthread_mutex_lock(&pool->lock);
-	void *allocated = allocate_from_list(size, pool);
-	pthread_mutex_unlock(&pool->lock);
+	pthread_mutex_lock(&pool.lock);
+	void *allocated = allocate_from_list(size, &pool);
+	pthread_mutex_unlock(&pool.lock);
 
 	return allocated;
 }
 
-/*	Wrapper function for jmalloc with thread local storage. Function assumes
-	that each thread provides its own memory pool struct, and as such should be thread-
-	safe without locks. */
-void* jmalloc_tls(size_t size, struct mempool *mempool)
+/*	jmalloc_tls works as jmalloc above, but uses memory pool in thread local storage */
+void* jmalloc_tls(size_t size)
 {
-	return allocate_from_list(size, mempool);
+	if (tlsPool.initialized == MEMPOOL_NOT_INITIALIZED) {
+		initialize_mempool(&tlsPool);
+	}
+	void *mem = allocate_from_list(size, &tlsPool);
+	return mem;
+}
+
+/* jfree takes an address to memory previously allocated by jmalloc and frees is, placing
+ * it in internally managed free list ordered by addresses in ascending order */
+void jfree (void *addr)
+{
+	pthread_mutex_lock(&pool.lock);
+	free_to_list(addr, &pool);
+	pthread_mutex_unlock(&pool.lock);
+}
+
+/* jfree_tls works as jfree above, but uses memory pool local to each thread */
+void jfree_tls (void *addr)
+{
+	free_to_list(addr, &tlsPool);
 }
 
 static void* allocate_from_list(size_t size, struct mempool *mempool)
@@ -137,30 +157,12 @@ static void* allocate_from_list(size_t size, struct mempool *mempool)
 			mempool->head = entry->next;
 	}
 
-	/* TODO unlock*/
-
 	void *allocatedMem = (void*) ((void*) entry + HEADER_SIZE);
 
 	return allocatedMem;
 }
 
-/*
-* jfree keeps the free list ordered from low addresses to high
-*/
-
-/* Wrapper functions depending on TLS or not */
-void jfree (void *addr)
-{
-	pthread_mutex_lock(&pool->lock);
-	free_to_list(addr, pool);
-	pthread_mutex_unlock(&pool->lock);
-}
-
-void jfree_tls (void *addr, struct mempool *mempool)
-{
-	free_to_list(addr, mempool);
-}
-
+/* Finds chunk from addr, and places chunk in ascending address order in free list */
 static void free_to_list(void *addr, struct mempool *mempool)
 {
 	struct chunk *ptr = (struct chunk*)((void*)(addr - HEADER_SIZE));
@@ -207,7 +209,7 @@ static void free_to_list(void *addr, struct mempool *mempool)
 	return;
 }
 
-/* Coalesces two adjecent chunks */
+/* Coalesces a chunk with its previous and next entry if their addresses overlap */
 static void coalesce(struct chunk* ptr) {
 
 	/* Try to coalesce ptr with its previous entry */
