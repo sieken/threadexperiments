@@ -1,7 +1,4 @@
-/* threadtest.c */
-
 #include <stdio.h>
-#include <pthread.h>
 #include <pthread.h>
 #include <math.h>
 #include <time.h>
@@ -11,94 +8,80 @@
 #define MIN 8
 #define MAX 4000
 
-struct memthread {
-	pthread_t thread;
-	struct mempool *pool;
-};
-
 struct {
 	int counter;
 	int done;
 	pthread_mutex_t lock;
 } allocStatus;
 
+enum mode { NON_TLS, TLS };
+
 clock_t end;
 
+double single(int);
 double multi(int, int);
 double multi_tls(int, int);
-int request(void);
-void thread_allocate(void);
-void thread_tls_allocate(struct memthread*);
+static int request(void);
+static double start_alloc(int, int, enum mode);
+static void thread_allocate(void);
+static void thread_tls_allocate(void);
 
-/* TODO för multi_tls måste minnespoolen i varje tråd-struct allokeras på heapen,
- * samt initialiseras */
+double single(int nAllocs)
+{
+	int nThreads = 1;
+	return start_alloc(nThreads, nAllocs, NON_TLS);
+}
 
 double multi(int nThreads, int nAllocs)
 {
-	struct memthread threads[nThreads];
+	return start_alloc(nThreads, nAllocs, NON_TLS);
+}
+
+double multi_tls(int nThreads, int nAllocs)
+{
+	return start_alloc(nThreads, nAllocs, TLS);
+}
+
+static double start_alloc(int nThreads, int nAllocs, enum mode mode)
+{
+	pthread_t threads[nThreads];
 
 	clock_t start;
 	double total;
 
-	/* Initialize allocStatus struct */
 	allocStatus.counter = nAllocs;
 	allocStatus.done = 0;
 	pthread_mutex_init(&allocStatus.lock, NULL);
 
-	/* Starting clock */
-	start = clock();
+	void (*funcToRun)(void);
+	if (mode == NON_TLS) {
+		funcToRun = thread_allocate;
+	} else if (mode == TLS) {
+		funcToRun = thread_tls_allocate;
+	} else {
+		fprintf(stderr, "Invalid mode, mode was: %d \n", mode);
+		exit(1);
+	}
 
-	/* Spawn threads */
+	/* Start timer and spawn threads */
+	start = clock();
 	for (int i = 0; i < nThreads; i++) {
-		pthread_create(&threads[i].thread, NULL, (void*)thread_allocate, NULL);
+		pthread_create(&threads[i], NULL, (void*)funcToRun, NULL);
 	}
 
 	/* Wait for threads to finish */
  	for (int i = 0; i < nThreads; i++) {
-		pthread_join(threads[i].thread, NULL);
+		pthread_join(threads[i], NULL);
 	}
 
 	total = (double)(end - start) / CLOCKS_PER_SEC;
 
 	return total;
-}
 
-double multi_tls(int nThreads, int nAllocs)
-{
-	struct memthread threads[nThreads];
-
-	clock_t start;
-	double total;
-
-	allocStatus.counter = nAllocs;
-	allocStatus.done = 0;
-	pthread_mutex_init(&allocStatus.lock, NULL);
-
-
-	/* Initialize mempools */
-	for (int i = 0; i < nThreads; i++) {
-		threads[i].pool = (struct mempool *) jmalloc(sizeof(struct mempool));
-		initialize_mempool(&threads[i].pool);
-	}
-
-	/* Start timer */
-	start = clock();
-
-	/* Spawn threads */
-	for (int i = 0; i < nThreads; i++) {
-		pthread_create(&threads[i].thread, NULL, (void*)thread_tls_allocate, &threads[i]);
-	}
-
-	/* Wait for threads to finish */
- 	for (int i = 0; i < nThreads; i++) {
-		pthread_join(threads[i].thread, NULL);
-	}
-
-	return total;
 }
 
 /* request() written by Johan Montelius, KTH */
-int request()
+static int request()
 {
 	/* k is log (MAX/MIN) */
 	double k = log((double) MAX/MIN);
@@ -112,7 +95,7 @@ int request()
 	return size;
 }
 
-void thread_allocate()
+static void thread_allocate()
 {
 	while(1) {
 		pthread_mutex_lock(&allocStatus.lock);
@@ -132,14 +115,14 @@ void thread_allocate()
 		pthread_mutex_lock(&allocStatus.lock);
 		allocStatus.counter--;
 		if ((allocStatus.counter < 1) && !allocStatus.done) {
-			allocStatus.done = 1;
 			end = clock();
+			allocStatus.done = 1;
 		}
 		pthread_mutex_unlock(&allocStatus.lock);
 	}
 }
 
-void thread_tls_allocate(struct memthread *threadStruct)
+static void thread_tls_allocate(void)
 {
 	while (1) {
 		pthread_mutex_lock(&allocStatus.lock);
@@ -152,9 +135,9 @@ void thread_tls_allocate(struct memthread *threadStruct)
 		/* Allocate memory, write to memory, free memory */
 		/* TODO buffer for random freeing */
 		int randSize = request();
-		int *mem = (int *) jmalloc_tls(randSize, threadStruct->pool);
+		int *mem = (int *) jmalloc_tls(randSize);
 		*mem = 123;
-		jfree_tls(mem, threadStruct->pool);
+		jfree_tls(mem);
 
 		pthread_mutex_lock(&allocStatus.lock);
 		allocStatus.counter--;

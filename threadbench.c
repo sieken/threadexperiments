@@ -37,6 +37,10 @@ int main(int argc, char *argv[])
 
 	double timeTotal;
 
+	if (type == SINGLE || type == ALL) {
+		timeTotal = single(numAllocs);
+		printf("Multi: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, 1);
+	}
 	if (type == MULTI || type == ALL) {
 		timeTotal = multi(numThreads, numAllocs);
 		printf("Multi: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, numThreads);
@@ -46,7 +50,6 @@ int main(int argc, char *argv[])
 		printf("Multi_TLS: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, numThreads);
 	}
 
-	printf("---------------Done, exiting main---------------\n");
 	return 0;
 }
 
