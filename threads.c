@@ -7,6 +7,7 @@
 
 #define MIN 8
 #define MAX 4000
+#define BUFFER_SIZE 1000
 
 struct {
 	int counter;
@@ -97,6 +98,7 @@ static int request()
 
 static void thread_allocate()
 {
+	static __thread int *buffer[BUFFER_SIZE] = { NULL };
 	while(1) {
 		pthread_mutex_lock(&allocStatus.lock);
 		if (allocStatus.done) {
@@ -105,12 +107,18 @@ static void thread_allocate()
 		}
 		pthread_mutex_unlock(&allocStatus.lock);
 
-		/* Allocate memory, write to memory, free memory */
-		/* TODO buffer for random freeing */
+		/* Randomly free memory */
+		int index = request() % BUFFER_SIZE;
+		if (buffer[index] != NULL) {
+			jfree(buffer[index]);
+		}
+
+		/* Allocate memory, write to memory */
 		int randSize = request();
 		int *mem = (int *) jmalloc(randSize);
 		*mem = 123;
-		jfree(mem);
+
+		buffer[index] = mem;
 
 		pthread_mutex_lock(&allocStatus.lock);
 		allocStatus.counter--;
@@ -124,6 +132,7 @@ static void thread_allocate()
 
 static void thread_tls_allocate(void)
 {
+	static __thread int *buffer[BUFFER_SIZE] = { NULL };
 	while (1) {
 		pthread_mutex_lock(&allocStatus.lock);
 		if (allocStatus.done) {
@@ -132,18 +141,24 @@ static void thread_tls_allocate(void)
 		}
 		pthread_mutex_unlock(&allocStatus.lock);
 
-		/* Allocate memory, write to memory, free memory */
-		/* TODO buffer for random freeing */
+		/* Randomly free memory */
+		int index = request() % BUFFER_SIZE;
+		if (buffer[index] != NULL) {
+			jfree_tls(buffer[index]);
+		}
+
+		/* Allocate memory, write to memory */
 		int randSize = request();
 		int *mem = (int *) jmalloc_tls(randSize);
 		*mem = 123;
-		jfree_tls(mem);
+
+		buffer[index] = mem;
 
 		pthread_mutex_lock(&allocStatus.lock);
 		allocStatus.counter--;
 		if ((allocStatus.counter < 1) && !allocStatus.done) {
-			allocStatus.done = 1;
 			end = clock();
+			allocStatus.done = 1;
 		}
 		pthread_mutex_unlock(&allocStatus.lock);
 	}

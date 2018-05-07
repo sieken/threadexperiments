@@ -5,6 +5,10 @@
 #include <pthread.h>
 #include <stdio.h>
 
+/* debug */
+#include <string.h>
+#include <errno.h>
+
 #define HEADER_SIZE sizeof(struct chunk)
 #define INITIAL_MEM_REQUEST 4096
 
@@ -22,8 +26,8 @@ struct mempool {
 	pthread_mutex_t lock;
 };
 
-static struct mempool pool = { NULL, 0, PTHREAD_MUTEX_INITIALIZER };
-static __thread struct mempool tlsPool = { NULL, 0, PTHREAD_MUTEX_INITIALIZER };
+static struct mempool pool = { NULL, MEMPOOL_NOT_INITIALIZED, PTHREAD_MUTEX_INITIALIZER };
+static __thread struct mempool tlsPool = { NULL, MEMPOOL_NOT_INITIALIZED, PTHREAD_MUTEX_INITIALIZER };
 static pthread_mutex_t poolLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t sbrkLock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -40,8 +44,9 @@ static struct chunk* request_memory(size_t size)
 {
 	struct chunk *newChunk;
 	pthread_mutex_lock(&sbrkLock);
-	if ((newChunk = sbrk(size + HEADER_SIZE)) < 0) {
-		fprintf(stderr, "jmalloc: memory request failed\n");
+	if ((newChunk = sbrk(size + HEADER_SIZE)) == (void*) -1) {
+		// fprintf(stderr, "jmalloc: memory request failed\n");
+		printf("jmalloc: memory request failed, errno: '%s'\n", strerror(errno));
 		return NULL;
 	} else {
 		newChunk->size = size;
@@ -59,7 +64,7 @@ void initialize_mempool(struct mempool *mempool)
 	pthread_mutex_lock(&sbrkLock);
 
 	void *bottom;
-	if ((bottom = sbrk(INITIAL_MEM_REQUEST + HEADER_SIZE)) < 0) {
+	if ((bottom = sbrk(INITIAL_MEM_REQUEST + HEADER_SIZE)) == (void*) -1) {
 		fprintf(stderr, "jmalloc: failed to initialize memory pool (out of memory?)\n");
 		exit(1);
 	} else {
@@ -96,8 +101,8 @@ void* jmalloc_tls(size_t size)
 	if (tlsPool.initialized == MEMPOOL_NOT_INITIALIZED) {
 		initialize_mempool(&tlsPool);
 	}
-	void *mem = allocate_from_list(size, &tlsPool);
-	return mem;
+	void *allocated = allocate_from_list(size, &tlsPool);
+	return allocated;
 }
 
 /* jfree takes an address to memory previously allocated by jmalloc and frees is, placing
