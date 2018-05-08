@@ -3,11 +3,8 @@
 #include <pthread.h>
 #include <time.h>
 
-int numThreads;
-int numRounds;
-
 struct token {
-	int passCount;
+	int token;
 };
 
 struct threadNode {
@@ -46,6 +43,7 @@ int main(int argc, char const *argv[]) {
 	return 0;
 }
 
+/* Creates a circular linked list of threadNodes and returns head of list */
 struct threadNode* createCircle() {
 
 	struct threadNode *head = (struct threadNode *) malloc(sizeof(struct threadNode));
@@ -66,32 +64,31 @@ struct threadNode* createCircle() {
 	return head;
 }
 
-/* Spawn NUM_THREADS threads to run threadFunc procedure */
+/* Spawn numThreads threads to run threadFunc procedure, start clock */
 void spawnThreads(struct threadNode *node) {
 	for (int i = 0; i < numThreads; i++) {
 		pthread_create(&node->thread, NULL, (void*)threadFunc, (void*)node);
 		node = node->next;
 	}
 	struct token *token = (struct token*) malloc(sizeof(token));
-	token->passCount = 0;
-	start = clock();
+	token->token = 42;
+
 	node->token = token;
+	start = clock();
+
 	pthread_cond_signal(&node->tokenReady);
 }
 
-/* Join all threads */
+/* Join all threads and stop clock */
 void joinThreads(struct threadNode *node) {
 	for (int i = 0; i < numThreads; i++) {
 		pthread_join(node->thread, NULL);
 		node = node->next;
 	}
 	end = clock();
-	// for (int i = 0; i < numThreads; i++) {
-	// 	free(node);
-	// 	node = node->next;
-	// }
 }
 
+/* Thread procedure for passing token */
 void threadFunc(struct threadNode *self) {
 	int rounds = numRounds;
 	while(rounds > 0) {
@@ -101,7 +98,6 @@ void threadFunc(struct threadNode *self) {
 		}
 		self->token = self->next->token;
 		self->next->token = NULL;
-		self->token->passCount++;
 
 		pthread_mutex_unlock(&self->next->lock);
 		pthread_cond_signal(&self->tokenReady);
