@@ -1,4 +1,4 @@
-/* japmalloc.c */
+/* jmalloc.c */
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -45,7 +45,6 @@ static struct chunk* request_memory(size_t size)
 	struct chunk *newChunk;
 	pthread_mutex_lock(&sbrkLock);
 	if ((newChunk = sbrk(size + HEADER_SIZE)) == (void*) -1) {
-		// fprintf(stderr, "jmalloc: memory request failed\n");
 		printf("jmalloc: memory request failed, errno: '%s'\n", strerror(errno));
 		return NULL;
 	} else {

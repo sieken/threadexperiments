@@ -3,7 +3,7 @@
 #include <math.h>
 #include <time.h>
 
-#include "japmalloc.c"
+#include "jmalloc.c"
 
 #define MIN 8
 #define MAX 4000
@@ -133,7 +133,7 @@ static void thread_allocate()
 static void thread_tls_allocate(void)
 {
 	static __thread int *buffer[BUFFER_SIZE] = { NULL };
-	while (1) {
+	while(1) {
 		pthread_mutex_lock(&allocStatus.lock);
 		if (allocStatus.done) {
 			pthread_mutex_unlock(&allocStatus.lock);

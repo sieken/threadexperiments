@@ -1,4 +1,4 @@
-/* threadbench.c
+/* jmallocbench.c
  *
  * Benchmarking jmalloc for a comparison between two different multithread approaches
  * Author: David Henriksson & Eliaz Sundberg
@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <string.h>
-#include "threads.c"
+#include "jmallocthreads.c"
 
 /* Test types for bench;
  * ALL - Run all types
@@ -19,6 +19,7 @@ enum testTypes { ALL, SINGLE, MULTI, MULTI_TLS };
 #define DEFAULT_NUM_ALLOCS	10000
 #define DEFAULT_NUM_THREADS	100
 #define DEFAULT_TEST_TYPE	(enum testTypes) ALL
+#define AVERAGER			10
 
 void parse_args(int argc, char *argv[]);
 enum testTypes get_type(char *typeString);
@@ -39,15 +40,23 @@ int main(int argc, char *argv[])
 
 	if (type == SINGLE || type == ALL) {
 		timeTotal = single(numAllocs);
-		printf("Single: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, 1);
+		printf("%d %.6lf\n", 1, timeTotal * 1000);
 	}
 	if (type == MULTI || type == ALL) {
-		timeTotal = multi(numThreads, numAllocs);
-		printf("Multi: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, numThreads);
+		timeTotal = 0;
+		for (size_t i = 0; i < AVERAGER; i++) {
+			timeTotal += multi(numThreads, numAllocs);
+		}
+		timeTotal /= AVERAGER;
+		printf("%d %.6lf\n", numThreads, timeTotal * 1000);
 	}
 	if (type == MULTI_TLS || type == ALL) {
-		timeTotal = multi_tls(numThreads, numAllocs);
-		printf("Multi_TLS: Total time for %d allocations: %.6lf seconds with %d threads.\n", numAllocs, timeTotal, numThreads);
+		timeTotal = 0;
+		for (size_t i = 0; i < AVERAGER; i++) {
+			timeTotal += multi_tls(numThreads, numAllocs);
+		}
+		timeTotal /= AVERAGER;
+		printf("%d %.6lf\n", numThreads, timeTotal * 1000);
 	}
 
 	return 0;
