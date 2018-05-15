@@ -103,11 +103,9 @@ static void thread_allocate(enum mode *mode)
 		int index = request() % BUFFER_SIZE;
 		if (buffer[index] != NULL) {
 			if (*mode == NON_TLS) {
-				printf("[%p] NON_TLS free\n", pthread_self());
 				jfree(buffer[index]);
 			}
 			else {
-				printf("[%p] TLS free\n", pthread_self());
 				jfree_tls(buffer[index]);
 			}
 		}
@@ -115,11 +113,9 @@ static void thread_allocate(enum mode *mode)
 		/* Allocate memory, write to memory */
 		int *mem, randSize = request();
 		if (*mode == NON_TLS) {
-			printf("[%p] NON_TLS jmalloc\n", pthread_self());
 			mem = (int *) jmalloc(randSize);
 		}
 		else if (*mode == TLS) {
-			printf("[%p] TLS jmalloc\n", pthread_self());
 			mem = (int *) jmalloc_tls(randSize);
 		}
 
