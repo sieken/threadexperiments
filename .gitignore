@@ -4,5 +4,8 @@
 # Unignore all with extensions
 !*.*
 
+# Ignore erlang bytecode, .dat-files for measurements and .pngs with plots
+*.beam
+
 # Unignore all dirs
 !*/
