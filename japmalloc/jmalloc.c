@@ -1,4 +1,4 @@
-/* japmalloc.c */
+/* jmalloc.c */
 
 #include <stdlib.h>
 #include <unistd.h>

@@ -3,7 +3,7 @@
 #include <math.h>
 #include <time.h>
 
-#include "japmalloc.c"
+#include "jmalloc.c"
 
 #define MIN 8
 #define MAX 4000
