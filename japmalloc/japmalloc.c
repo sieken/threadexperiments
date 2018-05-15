@@ -40,13 +40,13 @@ static void* allocate_from_list(size_t, struct mempool *);
 static void free_to_list(void *, struct mempool *);
 static void coalesce(struct chunk *);
 
+/* Requests a memory chunk of size size from system memory, returns error if unable to */
 static struct chunk* request_memory(size_t size)
 {
 	struct chunk *newChunk;
 	pthread_mutex_lock(&sbrkLock);
 	if ((newChunk = sbrk(size + HEADER_SIZE)) == (void*) -1) {
-		// fprintf(stderr, "jmalloc: memory request failed\n");
-		printf("jmalloc: memory request failed, errno: '%s'\n", strerror(errno));
+		fprintf(stderr, "jmalloc: memory request failed, reason: '%s'\n", strerror(errno));
 		return NULL;
 	} else {
 		newChunk->size = size;
@@ -59,6 +59,7 @@ static struct chunk* request_memory(size_t size)
 	return newChunk;
 }
 
+/* Initializes the memory pool, organizes pointers and initializes lock */
 void initialize_mempool(struct mempool *mempool)
 {
 	pthread_mutex_lock(&sbrkLock);

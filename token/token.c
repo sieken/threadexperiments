@@ -3,10 +3,12 @@
 #include <pthread.h>
 #include <time.h>
 
+/* PH struct for token to be passed around */
 struct token {
 	int token;
 };
 
+/* Node in circular structure */
 struct threadNode {
 	struct threadNode *next;
 	pthread_t thread;
@@ -15,8 +17,7 @@ struct threadNode {
 	struct token *token;
 };
 
-int numRounds;
-int numThreads;
+int numRounds, numThreads;
 clock_t start, end;
 
 struct threadNode* createCircle(void);

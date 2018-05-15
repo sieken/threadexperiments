@@ -20,11 +20,9 @@ enum testTypes { ALL, SINGLE, MULTI, MULTI_TLS };
 #define DEFAULT_NUM_THREADS	100
 #define DEFAULT_TEST_TYPE	(enum testTypes) ALL
 
-void parse_args(int argc, char *argv[]);
-enum testTypes get_type(char *typeString);
+static void parse_args(int argc, char *argv[]);
+static enum testTypes get_type(char *typeString);
 
-/* Needs to be global for argument parsing */
-/* TODO move parsing (and global vars into main) instead, if not too messy */
 int numAllocs, numThreads;
 enum testTypes type;
 
@@ -33,6 +31,7 @@ int main(int argc, char *argv[])
 	numAllocs = DEFAULT_NUM_ALLOCS;
 	numThreads = DEFAULT_NUM_THREADS;
 	type = DEFAULT_TEST_TYPE;
+
 	parse_args(argc, argv);
 
 	double timeTotal;
@@ -55,7 +54,7 @@ int main(int argc, char *argv[])
 
 /* parse_args parses any arguments passed to threadbench, setting any specified
  * supported variables */
-void parse_args(int argc, char *argv[])
+static void parse_args(int argc, char *argv[])
 {
 	int opt;
 	while ((opt = getopt(argc, argv, "a:t:T:")) != -1) {
@@ -80,7 +79,8 @@ multithreaded test types\n\
 	}
 }
 
-enum testTypes get_type(char *typeString)
+/* Fetches and sets bench mode */
+static enum testTypes get_type(char *typeString)
 {
 	if (strcmp(typeString, "all") == 0)
 		return ALL;
