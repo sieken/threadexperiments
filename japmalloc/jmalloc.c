@@ -28,7 +28,7 @@ struct mempool {
 
 static struct mempool pool = { NULL, MEMPOOL_NOT_INITIALIZED, PTHREAD_MUTEX_INITIALIZER };
 static __thread struct mempool tlsPool = { NULL, MEMPOOL_NOT_INITIALIZED, PTHREAD_MUTEX_INITIALIZER };
-static pthread_mutex_t poolLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t poolInitLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t sbrkLock = PTHREAD_MUTEX_INITIALIZER;
 
 void* jmalloc(size_t);
@@ -83,11 +83,11 @@ void initialize_mempool(struct mempool *mempool)
 void* jmalloc(size_t size)
 {
 	/* First jmalloc() call initializes the memory pool */
-	pthread_mutex_lock(&poolLock);
+	pthread_mutex_lock(&poolInitLock);
 	if (pool.initialized == MEMPOOL_NOT_INITIALIZED) {
 		initialize_mempool(&pool);
 	}
-	pthread_mutex_unlock(&poolLock);
+	pthread_mutex_unlock(&poolInitLock);
 
 	pthread_mutex_lock(&pool.lock);
 	void *allocated = allocate_from_list(size, &pool);
