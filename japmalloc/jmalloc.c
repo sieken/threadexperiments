@@ -1,11 +1,14 @@
-/* jmalloc.c */
+/* jmalloc.c
+ *
+ * Simple memory allocation module that handles multi-thread requests
+ * Authors: David Henriksson and Eliaz Sundberg 2018
+ */
 
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <stdio.h>
 
-/* debug */
 #include <string.h>
 #include <errno.h>
 
@@ -44,6 +47,7 @@ static void coalesce(struct chunk *);
 static struct chunk* request_memory(size_t size)
 {
 	struct chunk *newChunk;
+
 	pthread_mutex_lock(&sbrkLock);
 	if ((newChunk = sbrk(size + HEADER_SIZE)) == (void*) -1) {
 		fprintf(stderr, "jmalloc: memory request failed, reason: '%s'\n", strerror(errno));
@@ -53,7 +57,6 @@ static struct chunk* request_memory(size_t size)
 		newChunk->prev = NULL;
 		newChunk->next = NULL;
 	}
-
 	pthread_mutex_unlock(&sbrkLock);
 
 	return newChunk;
@@ -63,7 +66,6 @@ static struct chunk* request_memory(size_t size)
 void initialize_mempool(struct mempool *mempool)
 {
 	pthread_mutex_lock(&sbrkLock);
-
 	void *bottom;
 	if ((bottom = sbrk(INITIAL_MEM_REQUEST + HEADER_SIZE)) == (void*) -1) {
 		fprintf(stderr, "jmalloc: failed to initialize memory pool (out of memory?)\n");
@@ -74,11 +76,10 @@ void initialize_mempool(struct mempool *mempool)
 		pthread_mutex_init(&mempool->lock, NULL);
 		mempool->initialized = MEMPOOL_INITIALIZED;
 	}
-
 	pthread_mutex_unlock(&sbrkLock);
 }
 
-/* Memory allocation, takes a size in bytes of memory to allocate returns a
+/* Memory allocation, takes a size in bytes of memory to allocate, returns a
  * pointer to start of usable memory space */
 void* jmalloc(size_t size)
 {
@@ -96,7 +97,7 @@ void* jmalloc(size_t size)
 	return allocated;
 }
 
-/*	jmalloc_tls works as jmalloc above, but uses memory pool in thread local storage */
+/*	jmalloc_tls works as jmalloc above, but uses thread local memory pool */
 void* jmalloc_tls(size_t size)
 {
 	if (tlsPool.initialized == MEMPOOL_NOT_INITIALIZED) {
@@ -106,7 +107,7 @@ void* jmalloc_tls(size_t size)
 	return allocated;
 }
 
-/* jfree takes an address to memory previously allocated by jmalloc and frees is, placing
+/* jfree takes an address to memory previously allocated by jmalloc and frees it, placing
  * it in internally managed free list ordered by addresses in ascending order */
 void jfree (void *addr)
 {
@@ -121,6 +122,8 @@ void jfree_tls (void *addr)
 	free_to_list(addr, &tlsPool);
 }
 
+/* Takes the first block in the memory pool that is big enough for the requested
+ * size and returns a pointer to a new block to be used by the requester */
 static void* allocate_from_list(size_t size, struct mempool *mempool)
 {
 	/* If list is empty, allocate a big slab of new memory */
@@ -165,7 +168,7 @@ static void* allocate_from_list(size_t size, struct mempool *mempool)
 	return allocatedMem;
 }
 
-/* Finds chunk from addr, and places chunk in ascending address order in free list */
+/* Finds chunk from addr, places chunk in ascending address order in free list */
 static void free_to_list(void *addr, struct mempool *mempool)
 {
 	struct chunk *ptr = (struct chunk*)((void*)(addr - HEADER_SIZE));
@@ -212,27 +215,22 @@ static void free_to_list(void *addr, struct mempool *mempool)
 	return;
 }
 
-/* Coalesces a chunk with its previous and next entry if their addresses overlap */
+/* Coalesces a chunk with its previous and next entry if their addresses are adjacent */
 static void coalesce(struct chunk* ptr) {
-
 	/* Try to coalesce ptr with its previous entry */
 	if (ptr->prev != NULL) {
 		void *prevaddr = (void*) ptr->prev;
-
 		/* Check if previous entry aligns with ptr */
 		if ((void*)(prevaddr + ptr->prev->size + HEADER_SIZE) == ptr) {
 			ptr->prev->next = ptr->next;
 			ptr->prev->size += ptr->size + HEADER_SIZE;
-
 			/* Freed memory block is coalesced with, and starts from, its previous entry */
 			ptr = ptr->prev;
 		}
 	}
-
 	/* Try to coalesce ptr with its next entry */
 	if (ptr->next != NULL) {
 		int addrDelta = ptr->size + HEADER_SIZE;
-
 		/* Check if next entry aligns with ptr */
 		if (((void*)ptr + addrDelta) == ptr->next) {
 			ptr->size += ptr->next->size + HEADER_SIZE;

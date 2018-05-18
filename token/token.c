@@ -1,9 +1,17 @@
+/* token.c
+ *
+ * Creates a circular structure of threadNodes and
+ * measures the time it takes for a token to be passed around
+ * the circle a set number of times
+ * Authors: David Henriksson and Eliaz Sundberg 2018
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <time.h>
 
-/* PH struct for token to be passed around */
+/* Placeholder struct for token to be passed around the ring */
 struct token {
 	int token;
 };
@@ -46,13 +54,13 @@ int main(int argc, char const *argv[]) {
 
 /* Creates a circular linked list of threadNodes and returns head of list */
 struct threadNode* createCircle() {
-
 	struct threadNode *head = (struct threadNode *) malloc(sizeof(struct threadNode));
 	pthread_mutex_init(&head->lock, NULL);
 	pthread_cond_init(&head->tokenReady, NULL);
 
 	struct threadNode *current = head;
 	for (int i = 0; i < numThreads - 1; i++) {
+		/* Initialize struct members */
 		pthread_mutex_init(&current->lock, NULL);
 		pthread_cond_init(&current->tokenReady, NULL);
 		current->next = (struct threadNode *) malloc(sizeof(struct threadNode));

@@ -1,7 +1,7 @@
 /* jmallocbench.c
  *
  * Benchmarking jmalloc for a comparison between two different multithread approaches
- * Author: David Henriksson & Eliaz Sundberg
+ * Authors: David Henriksson & Eliaz Sundberg 2018
  */
 
 #include <stdio.h>

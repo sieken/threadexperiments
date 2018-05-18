@@ -1,3 +1,10 @@
+/* jmallocthreads.c
+ *
+ * Spawns threads to make allocations using jmalloc.c
+ * Used by jmallocbench.c
+ * Authors: David Henriksson and Eliaz Sundberg 2018
+ */
+
 #include <stdio.h>
 #include <pthread.h>
 #include <math.h>
