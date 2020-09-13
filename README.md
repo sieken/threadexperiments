@@ -2,7 +2,7 @@
 
 ![TLS](img/tls.png)
 
-`token`: A comparison between _OS threads_ (C) and _green threads_ (Erlang)
+`token`: A comparison between _OS threads_ (C) and _green threads_ (Erlang), where threads pass a token around in a loop.
 
 ![ErlangVsC](img/erlang-c.png)
 ![Erlang](img/erlang.png)
