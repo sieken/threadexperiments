@@ -3,6 +3,7 @@
 
 # Unignore all with extensions
 !*.*
+!Makefile
 
 # Ignore erlang bytecode, .dat-files for measurements and .pngs with plots
 *.beam
